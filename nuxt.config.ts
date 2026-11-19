@@ -7,9 +7,19 @@ export default defineNuxtConfig({
   nitro: {
     serverAssets: [
       {
-        baseName: "extraction-sandbox",
-        dir: ".",
-        pattern: "{engine/audio.ts,engine/separate.ts,engine/models.ts,engine/protocol.ts,engine/cloud-project.ts,engine/cloud-worker.ts,engine/cloud-package.json,server/utils/wav-waveform.ts,shared/utils/waveform.ts,shared/utils/pitch.ts,shared/utils/lyrics.ts}",
+        baseName: "extraction-sandbox-engine",
+        dir: "./engine",
+        pattern: "*",
+      },
+      {
+        baseName: "extraction-sandbox-server",
+        dir: "./server/utils",
+        pattern: "wav-waveform.ts",
+      },
+      {
+        baseName: "extraction-sandbox-shared",
+        dir: "./shared/utils",
+        pattern: "*.ts",
       },
     ],
     vercel: { functions: { maxDuration: 300 } },

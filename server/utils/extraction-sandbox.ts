@@ -8,18 +8,29 @@ export const cloudUploads = process.env.VERCEL === '1'
 
 const sandboxTimeout = 30 * 60_000
 const sources = [
-  'engine/audio.ts', 'engine/separate.ts', 'engine/models.ts', 'engine/protocol.ts',
-  'engine/cloud-project.ts', 'engine/cloud-worker.ts', 'engine/cloud-package.json',
-  'server/utils/wav-waveform.ts', 'shared/utils/waveform.ts', 'shared/utils/pitch.ts', 'shared/utils/lyrics.ts',
+  { path: 'engine/audio.ts', mount: 'extraction-sandbox-engine', key: 'audio.ts' },
+  { path: 'engine/separate.ts', mount: 'extraction-sandbox-engine', key: 'separate.ts' },
+  { path: 'engine/models.ts', mount: 'extraction-sandbox-engine', key: 'models.ts' },
+  { path: 'engine/protocol.ts', mount: 'extraction-sandbox-engine', key: 'protocol.ts' },
+  { path: 'engine/cloud-project.ts', mount: 'extraction-sandbox-engine', key: 'cloud-project.ts' },
+  { path: 'engine/cloud-worker.ts', mount: 'extraction-sandbox-engine', key: 'cloud-worker.ts' },
+  { path: 'engine/cloud-package.json', mount: 'extraction-sandbox-engine', key: 'cloud-package.json' },
+  { path: 'server/utils/wav-waveform.ts', mount: 'extraction-sandbox-server', key: 'wav-waveform.ts' },
+  { path: 'shared/utils/waveform.ts', mount: 'extraction-sandbox-shared', key: 'waveform.ts' },
+  { path: 'shared/utils/pitch.ts', mount: 'extraction-sandbox-shared', key: 'pitch.ts' },
+  { path: 'shared/utils/lyrics.ts', mount: 'extraction-sandbox-shared', key: 'lyrics.ts' },
 ]
 
 async function sandboxFiles() {
-  const storage = useStorage('assets:extraction-sandbox')
-  return Promise.all(sources.map(async path => {
-    const content = await storage.getItemRaw<string | Buffer>(path)
-    if (content == null) throw new Error(`Missing sandbox source: ${path}`)
+  return Promise.all(sources.map(async source => {
+    const storage = useStorage(`assets:${source.mount}`)
+    const content = await storage.getItemRaw<string | Buffer>(source.key)
+    if (content == null) {
+      const keys = await storage.getKeys()
+      throw new Error(`Missing sandbox source: ${source.path} (available: ${keys.join(', ') || 'none'})`)
+    }
     return {
-      path: path === 'engine/cloud-package.json' ? 'package.json' : path,
+      path: source.path === 'engine/cloud-package.json' ? 'package.json' : source.path,
       content: Buffer.from(content),
     }
   }))
