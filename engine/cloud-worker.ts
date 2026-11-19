@@ -60,10 +60,12 @@ async function run() {
   let job = await readCloudProject(owner!, id!)
   if (!job || job.run?.id !== runId || !extractionActive(job.phase)) return
   await mkdir(directory, { recursive: true })
+  let stage = 'mengunduh audio dari Blob'
   try {
     if (!job.originalAudio || !job.durationMs) {
       job = await change({ phase: 'validating' }, { key: 'decode', message: 'Memeriksa audio lewat FFmpeg.' })
       await download(prefix + 'upload', resolve(directory, 'upload'))
+      stage = 'mendekode audio dengan FFmpeg'
       const { decodeAudio } = await import('./audio.ts')
       const result = await decodeAudio(directory, job.extension, signal, report)
       await progress
@@ -72,6 +74,7 @@ async function run() {
         await change({ phase: 'failed', invalidAudio: true, error }, { key: 'failed', message: error })
         return
       }
+      stage = 'menyimpan audio asli ke Blob'
       const originalAudio = await publish('original')
       job = await change({ durationMs: result.durationMs, originalAudio }, {
         key: 'validated', message: 'Audio asli siap digunakan.',
@@ -81,9 +84,11 @@ async function run() {
     }
     if (!job.useOriginal && !job.hasVocals) {
       job = await change({ phase: 'separating' }, { key: 'separation', message: 'Memisahkan vokal dengan Demucs.' })
+      stage = 'memisahkan vokal dengan Demucs'
       const { separateVocals } = await import('./separate.ts')
       await separateVocals(directory, resolve('models'), signal, report)
       await progress
+      stage = 'menyimpan vokal ke Blob'
       const vocalsAudio = await publish('vocals')
       job = await change({ hasVocals: true, vocalsAudio }, { key: 'vocals', message: 'Stem vokal tersimpan.' })
     }
@@ -92,7 +97,7 @@ async function run() {
     })
   } catch (cause) {
     if (signal.aborted) return
-    console.error('[LyRex] Gagal memproses audio', cause)
+    console.error(`[LyRex] Gagal ${stage}`, cause)
     await progress
     const error = job.phase === 'separating'
       ? 'Pemisahan vokal gagal. Coba lagi atau transkripsikan audio asli.'

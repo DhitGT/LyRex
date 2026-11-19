@@ -30,6 +30,7 @@ export async function launchCloudRun(project: VersionedProject) {
   const run = { id: randomUUID(), expiresAt: Date.now() + sandboxTimeout + 60_000 }
   const job = await writeCloudProject({ ...project, run })
   let sandbox: Sandbox | undefined
+  let stage = 'menyiapkan sandbox audio'
   try {
     const token = process.env.BLOB_READ_WRITE_TOKEN
     if (!token) throw new Error('Private Blob store is missing')
@@ -51,10 +52,14 @@ export async function launchCloudRun(project: VersionedProject) {
       return attached ?? job
     }
     await sandbox.writeFiles(files)
+    stage = 'menginstal FFmpeg dan dependensi audio'
     const installed = await sandbox.runCommand('npm', [
       'install', '--omit=dev', '--no-audit', '--no-fund', '--allow-scripts=ffmpeg-static,onnxruntime-node',
     ])
-    if (installed.exitCode !== 0) throw new Error('Sandbox audio dependencies failed to install')
+    if (installed.exitCode !== 0) {
+      throw new Error(`npm install exited with code ${installed.exitCode}`)
+    }
+    stage = 'menjalankan worker audio'
     const command = await sandbox.runCommand({
       cmd: 'node',
       args: ['engine/cloud-worker.ts', job.owner, job.id, run.id],
@@ -66,7 +71,7 @@ export async function launchCloudRun(project: VersionedProject) {
     return launched ?? job
   } catch (error) {
     if (sandbox) await sandbox.stop().catch(() => {})
-    console.error('[LyRex] Gagal menjalankan sandbox audio', job.id, error)
+    console.error(`[LyRex] Gagal ${stage}`, job.id, error)
     return (await updateCloudRun(job.owner, job.id, run.id, current =>
       extractionActive(current.phase)
         ? failedRun(current, 'Worker Vercel tidak bisa dimulai. Coba lagi.')

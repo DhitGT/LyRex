@@ -43,7 +43,7 @@ export async function decodeAudio(directory: string, extension: string, signal: 
     report({ key: 'decode', message: `FFmpeg sudah membaca ${Math.floor(ms / 1_000)} detik audio` })
   })
   if (result.code !== 0) {
-    console.error(result.stderr)
+    console.error('[LyRex] FFmpeg gagal membaca atau mendekode file audio', result.stderr)
     return { error: 'Audio rusak atau formatnya tidak sesuai dengan ekstensi file.' }
   }
   const audio = await readFile(temporary)

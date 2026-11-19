@@ -10,4 +10,4 @@ npm run build -- --preset node-server
 npm start
 ```
 
-Route HTTPS traffic to the Node server. If you use a reverse proxy, configure it to accept request bodies of at least 100,000,000 bytes to support LyRex's 100 MB upload limit. Vercel Functions reject request bodies over 4.5 MB before the extraction endpoint runs. [Vercel Functions limits](https://vercel.com/docs/functions/limitations#request-body-size)
+Route HTTPS traffic to the Node server. If you use a reverse proxy, configure it to accept request bodies of at least 100,000,000 bytes to support LyRex's 100 MB upload limit. Vercel deployments instead upload directly to private Blob storage and run FFmpeg and Demucs in a Vercel Sandbox; configure `BLOB_READ_WRITE_TOKEN` in the project environment. Vercel Functions reject proxied request bodies over 4.5 MB before the extraction endpoint runs. [Vercel Functions limits](https://vercel.com/docs/functions/limitations#request-body-size)
