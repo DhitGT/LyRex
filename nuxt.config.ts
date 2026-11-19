@@ -6,7 +6,11 @@ export default defineNuxtConfig({
   },
   nitro: {
     serverAssets: process.env.VERCEL === "1" ? [
-      { baseName: "extraction-sandbox", dir: ".", pattern: "{engine/*.{ts,json},server/utils/wav-waveform.ts,shared/utils/{waveform,pitch,lyrics}.ts}" },
+      {
+        baseName: "extraction-sandbox",
+        dir: ".",
+        pattern: "{engine/audio.ts,engine/separate.ts,engine/models.ts,engine/protocol.ts,engine/cloud-project.ts,engine/cloud-worker.ts,engine/cloud-package.json,server/utils/wav-waveform.ts,shared/utils/waveform.ts,shared/utils/pitch.ts,shared/utils/lyrics.ts}",
+      },
     ] : [],
     vercel: { functions: { maxDuration: 300 } },
   },

@@ -16,7 +16,7 @@ const sources = [
 async function sandboxFiles() {
   const storage = useStorage('assets:extraction-sandbox')
   return Promise.all(sources.map(async path => {
-    const content = await storage.getItemRaw<string | Buffer>(path.replaceAll('/', ':'))
+    const content = await storage.getItemRaw<string | Buffer>(path)
     if (content == null) throw new Error(`Missing sandbox source: ${path}`)
     return {
       path: path === 'engine/cloud-package.json' ? 'package.json' : path,
