@@ -39,6 +39,8 @@
 
 .studio-header button, .studio-header a:not(.brand), .studio-panel button, .studio-panel a[data-slot='base'] { min-height: 2.75rem; }
 .studio-header .studio-new { border-radius: .5rem; padding-inline: .85rem; font-weight: 700; white-space: nowrap; }
+.studio-latency-trigger { flex: none; white-space: nowrap; }
+.studio-latency-value { font-variant-numeric: tabular-nums; color: var(--studio-green); }
 .studio-mobile-projects { display: none; }
 
 .studio-layout {
@@ -101,6 +103,8 @@
 .studio-project-header { display: flex; align-items: start; justify-content: space-between; gap: 1rem; margin-bottom: 1.35rem; }
 .studio-project-title { gap: .9rem; min-width: 0; }
 .studio-project-title > div { min-width: 0; }
+.studio-title-row { display: flex; align-items: center; gap: .35rem; }
+.studio-title-row > button { flex: none; }
 .studio h1 { font: 750 clamp(1.6rem, 4vw, 2.45rem)/1.1 var(--font-display); overflow-wrap: anywhere; letter-spacing: -.035em; }
 .studio-project-title p, .studio-create-intro p, .studio-description { color: var(--studio-muted); }
 .studio-project-title p { margin-top: .35rem; font-size: .95rem; }
@@ -124,7 +128,7 @@
   top: .35rem;
   z-index: 2;
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(6, minmax(0, 1fr));
   gap: .28rem;
   padding: .32rem;
   margin-bottom: .9rem;
@@ -194,13 +198,28 @@
   .studio-project-header { flex-wrap: wrap; margin-bottom: .85rem; }
 }
 
+@media (max-width: 620px) {
+  .studio-header .studio-latency-trigger { width: 2.75rem; justify-content: center; padding-inline: 0; }
+  .studio-latency-label, .studio-latency-value { display: none; }
+}
+
 @media (max-width: 470px) {
   .studio-header { gap: .3rem; min-height: 3.85rem; }
   .studio-brand-label { display: none; }
   .studio-header .studio-new { padding-inline: .55rem; }
   .studio-workspace { padding: .7rem; }
   .studio-tabs { gap: .12rem; padding: .22rem; }
-  .studio-tabs button { flex-direction: column; gap: .18rem; padding: .27rem .11rem; font-size: .875rem; line-height: 1.1; min-height: 3rem; }
+  .studio-tabs button { flex-direction: column; gap: .18rem; padding: .27rem .08rem; font-size: clamp(.65rem, 2.7vw, .875rem); line-height: 1.1; min-height: 3rem; }
   .studio-panel { padding: .75rem; }
   .studio .upload-card { padding: .8rem; }
+}
+
+@media (max-width: 390px) {
+  .studio-mobile-projects { width: 2.75rem; }
+  .studio-mobile-projects span:not([aria-hidden]) { display: none; }
+}
+
+@media (max-width: 350px) {
+  .studio-header .studio-new { width: 2.75rem; justify-content: center; padding-inline: 0; }
+  .studio-new-label { display: none; }
 }

@@ -1,4 +1,4 @@
-import { estimatePitch } from './pitch'
+import { estimatePitch } from './pitch.ts'
 
 export interface Waveform {
   durationMs: number

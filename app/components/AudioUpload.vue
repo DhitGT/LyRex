@@ -3,6 +3,7 @@ import { isYouTubeUrl } from '#shared/utils/lyrics'
 import type { Extraction } from '#shared/utils/lyrics'
 
 const emit = defineEmits<{ created: [job: Extraction] }>()
+const { vercelUploads } = useRuntimeConfig().public
 const fileInput = useTemplateRef<HTMLInputElement>('fileInput')
 const replaceButton = useTemplateRef<HTMLButtonElement>('replaceButton')
 const youtubeInput = useTemplateRef<HTMLInputElement>('youtubeInput')
@@ -73,20 +74,50 @@ function onDrop(event: DragEvent) {
   selectFile(files?.[0])
 }
 
+function uploadHeaders(file: File) {
+  return {
+    'X-LyRex-Filename': encodeURIComponent(file.name),
+    'X-LyRex-Source': source.value,
+    'X-LyRex-YouTube': encodeURIComponent(youtubeUrl.value.trim()),
+  }
+}
+
+async function uploadToBlob(file: File) {
+  const headers = uploadHeaders(file)
+  const { id, pathname, clientToken } = await $fetch('/api/extractions/upload', { method: 'POST', headers })
+  const { put } = await import('@vercel/blob/client')
+  await put(pathname, file, {
+    access: 'private',
+    token: clientToken,
+    contentType: 'application/octet-stream',
+    multipart: file.size > 5_000_000,
+    onUploadProgress: ({ loaded }) => { uploadedBytes.value = Math.min(file.size, loaded) },
+  })
+  uploadedBytes.value = file.size
+  return $fetch<Extraction>('/api/extractions', {
+    method: 'POST',
+    headers: { ...headers, 'X-LyRex-Upload-Id': id },
+  })
+}
+
 function upload(file: File) {
   return new Promise<Extraction>((resolve, reject) => {
     const request = new XMLHttpRequest()
     request.open('POST', '/api/extractions')
     request.responseType = 'json'
     request.setRequestHeader('Content-Type', 'application/octet-stream')
-    request.setRequestHeader('X-LyRex-Filename', encodeURIComponent(file.name))
-    request.setRequestHeader('X-LyRex-Source', source.value)
-    request.setRequestHeader('X-LyRex-YouTube', encodeURIComponent(youtubeUrl.value.trim()))
+    for (const [name, value] of Object.entries(uploadHeaders(file))) request.setRequestHeader(name, value)
     request.upload.onprogress = event => { uploadedBytes.value = Math.min(file.size, event.loaded) }
     request.upload.onload = () => { uploadedBytes.value = file.size }
     request.onload = () => {
       if (request.status === 202 && request.response?.id) resolve(request.response)
-      else reject(new Error(request.response?.data?.message || 'Audio gagal diunggah. Coba lagi.'))
+      else {
+        const sizeError = request.getResponseHeader('x-vercel-error')?.startsWith('FUNCTION_PAYLOAD_TOO_LARGE')
+          ? 'Batas unggahan Vercel adalah 4,5 MB. Pilih file yang lebih kecil.'
+          : 'File audio melebihi batas unggahan server. Pilih file yang lebih kecil.'
+        const fallback = request.status === 413 ? sizeError : 'Audio gagal diunggah. Coba lagi.'
+        reject(new Error(request.response?.data?.message || fallback))
+      }
     }
     request.onerror = () => reject(new Error('Koneksi unggahan terputus. Coba lagi.'))
     request.send(file)
@@ -111,10 +142,12 @@ async function extractLyrics() {
   uploadedBytes.value = 0
   checking.value = true
   try {
-    const extraction = await upload(file)
+    const extraction = await (vercelUploads ? uploadToBlob(file) : upload(file))
     emit('created', extraction)
   } catch (error) {
-    fileError.value = error instanceof Error ? error.message : 'Audio gagal diunggah. Coba lagi.'
+    const response = error as { data?: { data?: { message?: string } } }
+    fileError.value = response?.data?.data?.message ||
+      (error instanceof Error && !vercelUploads ? error.message : 'Audio gagal diunggah. Coba lagi.')
   } finally {
     checking.value = false
   }

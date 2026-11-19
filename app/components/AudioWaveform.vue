@@ -24,6 +24,8 @@ import { lyricTimestamp } from '#shared/utils/lyrics'
 import type { LyricWord } from '#shared/utils/lyrics'
 import { waveformDetail } from '#shared/utils/waveform'
 import type { WaveformDetail } from '#shared/utils/waveform'
+import { visualPlaybackMs } from '~/utils/playback-latency'
+import { useLatencyTestRunning, usePlaybackLatency } from '~/composables/usePlaybackLatency'
 
 const props = withDefaults(defineProps<{
   src: string
@@ -36,6 +38,8 @@ const props = withDefaults(defineProps<{
   markers?: LyricWord[]
 }>(), { active: true })
 const emit = defineEmits<{ position: [ms: number] }>()
+const playbackOffset = usePlaybackLatency()
+const testingLatency = useLatencyTestRunning()
 const audio = useTemplateRef<HTMLAudioElement>('audio')
 const track = useTemplateRef<HTMLElement>('track')
 const overview = useTemplateRef<HTMLCanvasElement>('overview')
@@ -63,6 +67,8 @@ let pending: { ms: number, play: boolean } | undefined
 let loadedSource = ''
 let loadVersion = 0
 let followPosition = true
+let playbackStartMs = 0
+let previewEndMs: number | undefined
 
 const duration = computed(() => Math.round(mediaDuration.value || waveform.value?.durationMs || props.durationMs || 0))
 const viewLength = computed(() => Math.min(duration.value, zoom.value || duration.value))
@@ -251,7 +257,12 @@ function setPosition(ms: number) {
 }
 
 function syncPosition() {
-  if (audio.value && !pending && pointerId === undefined) setPosition(audio.value.currentTime * 1_000)
+  const element = audio.value
+  if (!element || pending || pointerId !== undefined) return
+  const mediaMs = element.currentTime * 1_000
+  const shown = playing.value && !element.paused && !element.ended
+    ? Math.max(playbackStartMs, visualPlaybackMs(mediaMs, playbackOffset.value, element.playbackRate)) : mediaMs
+  setPosition(Math.min(duration.value || mediaMs, shown))
 }
 
 function stopFrame() {
@@ -261,11 +272,18 @@ function stopFrame() {
 
 function tick() {
   syncPosition()
+  if (previewEndMs !== undefined && position.value >= previewEndMs) {
+    const end = previewEndMs
+    pause()
+    seek(end)
+    return
+  }
   if (playing.value && audio.value && !audio.value.paused) frame = requestAnimationFrame(tick)
   else frame = undefined
 }
 
 function onPlay() {
+  playbackStartMs = pending?.ms ?? (audio.value?.currentTime ?? 0) * 1_000
   playing.value = true
   stopFrame()
   tick()
@@ -273,11 +291,13 @@ function onPlay() {
 
 function onPause() {
   playing.value = false
+  previewEndMs = undefined
   stopFrame()
   syncPosition()
 }
 
 function play() {
+  if (testingLatency.value) return
   mediaError.value = ''
   void audio.value?.play().catch((error: DOMException) => {
     if (error.name !== 'AbortError') mediaError.value = 'Audio gagal diputar. Coba lagi.'
@@ -285,6 +305,7 @@ function play() {
 }
 
 function pause() {
+  previewEndMs = undefined
   if (pending) pending.play = false
   audio.value?.pause()
 }
@@ -292,8 +313,10 @@ function pause() {
 function seek(ms: number) {
   const element = audio.value
   if (!element || !duration.value) return
+  previewEndMs = undefined
   followPosition = true
   const next = Math.max(0, Math.min(duration.value, ms))
+  playbackStartMs = next
   if (element.readyState && !pending) element.currentTime = next / 1_000
   else {
     pending = { ms: next, play: pending?.play ?? false }
@@ -303,8 +326,9 @@ function seek(ms: number) {
   setPosition(next)
 }
 
-function seekAndPlay(ms: number) {
+function seekAndPlay(ms: number, endMs?: number) {
   seek(ms)
+  previewEndMs = endMs !== undefined && endMs > ms ? Math.min(endMs, duration.value) : undefined
   if (pending) pending.play = true
   play()
 }
@@ -317,6 +341,7 @@ function metadata() {
   if (pending) {
     const { ms, play: resume } = pending
     pending = undefined
+    playbackStartMs = ms
     element.currentTime = Math.min(ms / 1_000, element.duration)
     if (resume && props.active && element.paused) play()
   }
@@ -370,14 +395,17 @@ function keyboardSeek(event: KeyboardEvent) {
 
 watch(() => props.src, () => {
   const element = audio.value
-  if (element && !pending) pending = { ms: position.value, play: !element.paused }
+  if (element && !pending) pending = { ms: element.currentTime * 1_000, play: !element.paused }
   mediaError.value = ''
   mediaDuration.value = 0
   playing.value = false
+  previewEndMs = undefined
   stopFrame()
 }, { flush: 'sync' })
 watch([mounted, () => props.src, () => props.active, () => props.waveform], () => void loadPeaks())
 watch(() => props.active, active => { if (!active) pause() })
+watch(testingLatency, testing => { if (testing) pause() })
+watch(playbackOffset, syncPosition)
 watch([muted, volume, rate], applyAudioSettings)
 watch([waveform, detail, duration, viewStart, viewLength], draw, { flush: 'post' })
 watch(duration, () => { viewStart.value = Math.max(0, Math.min(viewStart.value, duration.value - viewLength.value)) })
@@ -396,7 +424,15 @@ onBeforeUnmount(() => {
   resize?.disconnect()
 })
 
-defineExpose({ pause, seekAndPlay })
+defineExpose({
+  pause, seekAndPlay,
+  focusAt: (ms: number) => {
+    pause()
+    seek(ms)
+    setZoom(zoomSteps.value.find(step => step > 0 && step <= 3_000) ?? 0)
+  },
+  readWaveform: () => props.waveform ? Promise.resolve(props.waveform) : fetchWaveform(props.src)
+})
 </script>
 
 <template>

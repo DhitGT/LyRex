@@ -49,7 +49,8 @@ const followTranscript = ref(true)
 const audioSource = computed(() => props.job.hasVocals && !props.job.useOriginal ? 'vocals' : 'original')
 const audioUrl = computed(() => `/api/extractions/${props.job.id}/audio/${audioSource.value}`)
 const canResume = computed(() => props.job.speechCheckpoint?.source === audioSource.value)
-const savedLines = computed(() => props.job.transcript?.lines ?? (!props.job.lyricReference ? props.job.lines : undefined))
+const savedLines = computed(() => props.job.transcript?.lines ??
+  (!props.job.lyricReference && props.job.draftSource !== 'editor' ? props.job.lines : undefined))
 let controller: AbortController | undefined
 let previewRequest: AbortController | undefined
 

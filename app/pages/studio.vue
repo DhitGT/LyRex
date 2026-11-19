@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { extractionLabels, lyricTimestamp } from '#shared/utils/lyrics'
+import { extractionLabels, lyricTimestamp, projectTitle } from '#shared/utils/lyrics'
 import type { Extraction, ProjectSummary } from '#shared/utils/lyrics'
+import EarphoneLatency from '~/components/EarphoneLatency.vue'
 
 useSeoMeta({ title: 'Studio LyRex', description: 'Kelola proyek audio, transkrip, dan draft lirik.' })
 
@@ -23,13 +24,13 @@ function updateProject(job: Extraction) {
   const current = projects.value.find(project => project.id === job.id)
   if (!current) return
   projects.value = projects.value.map(project => project.id === job.id
-    ? { ...project, phase: job.phase, durationMs: job.durationMs }
+    ? { ...project, title: job.title, phase: job.phase, durationMs: job.durationMs }
     : project)
 }
 
 async function created(job: Extraction) {
   projects.value = [{
-    id: job.id, phase: job.phase, name: job.name, createdAt: Date.now(), durationMs: job.durationMs
+    id: job.id, phase: job.phase, name: job.name, title: job.title, createdAt: Date.now(), durationMs: job.durationMs
   }, ...projects.value.filter(project => project.id !== job.id)]
   await router.push(studioLink(job.id, 'progres'))
   await nextTick()
@@ -56,12 +57,13 @@ async function removed(id: string) {
         <span class="studio-brand-label">Studio</span>
       </div>
       <div class="studio-header-actions">
+        <EarphoneLatency />
         <button type="button" class="studio-mobile-projects" :aria-expanded="projectsOpen"
-          aria-controls="studio-projects" @click="projectsOpen = !projectsOpen">
-          <UIcon name="i-lucide-folder-open" aria-hidden="true" /> Proyek
+          aria-label="Daftar proyek" aria-controls="studio-projects" @click="projectsOpen = !projectsOpen">
+          <UIcon name="i-lucide-folder-open" aria-hidden="true" /><span>Proyek</span>
         </button>
-        <UButton :to="{ path: '/studio', query: { new: '1' } }" icon="i-lucide-plus" class="studio-new">
-          Proyek baru
+        <UButton :to="{ path: '/studio', query: { new: '1' } }" icon="i-lucide-plus" class="studio-new" aria-label="Proyek baru">
+          <span class="studio-new-label">Proyek baru</span>
         </UButton>
       </div>
     </header>
@@ -83,7 +85,7 @@ async function removed(id: string) {
             :aria-current="projectId === project.id ? 'page' : undefined" @click="projectsOpen = false">
             <span class="studio-project-icon"><UIcon name="i-lucide-audio-lines" aria-hidden="true" /></span>
             <span class="studio-project-text">
-              <strong :title="project.name">{{ project.name.replace(/\.(mp3|wav|m4a)$/i, '') }}</strong>
+              <strong :title="projectTitle(project)">{{ projectTitle(project) }}</strong>
               <small>{{ extractionLabels[project.phase] }}<template v-if="project.durationMs"> · {{ lyricTimestamp(project.durationMs).split('.')[0] }}</template></small>
             </span>
           </NuxtLink>

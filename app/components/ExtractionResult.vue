@@ -43,16 +43,20 @@ function download(format: LyricFormat) {
         Vokal saja
       </UButton>
     </div>
-    <p v-else-if="kind !== 'transcript'">Draft dibuat dari audio asli.</p>
+    <p v-else-if="kind !== 'transcript' && job.draftSource !== 'editor'">Draft dibuat dari audio asli.</p>
     <p v-if="job.estimatedTiming">
       {{ job.vocalTiming ? 'Perkiraan waktu kata disesuaikan dengan stem vokal.'
         : job.lyricReference?.timingSource === 'lrclib' ? 'Waktu kata diperkirakan dari timestamp baris LRCLIB.'
+          : job.draftSource === 'editor' ? 'Periksa waktu lirik dengan memutarnya di Editor.'
           : hasWordTimes ? 'Timestamp baris dan kata adalah perkiraan dari hasil Web Speech.'
           : 'Web Speech menghasilkan perkiraan timestamp per baris.' }}
     </p>
     <p v-if="job.lyricReference">
       Acuan LRCLIB · {{ job.lyricReference.trackName }} — {{ job.lyricReference.artistName }}.
       <template v-if="job.lyricReference.timingSource === 'lrclib'">Timestamp baris dari LRCLIB.</template>
+      <template v-else-if="job.lyricReference.timingSource === 'lrclib-waveform'">Timestamp LRCLIB disesuaikan dengan waveform.</template>
+      <template v-else-if="job.lyricReference.timingSource === 'waveform'">Timestamp diperkirakan dari waveform.</template>
+      <template v-else-if="job.draftSource === 'editor'">{{ job.lyricReference.matchedLines }} dari {{ lines.length }} baris cocok dengan lirik bertimestamp.</template>
       <template v-else>{{ job.lyricReference.matchedLines }} dari {{ lines.length }} baris cocok dengan hasil transkripsi.</template>
     </p>
     <AudioWaveform
@@ -79,7 +83,7 @@ function download(format: LyricFormat) {
             <span v-for="(word, wordIndex) in line.words" :key="wordIndex" :class="{ 'current-word': word === activeWord }">
               {{ word.text }}
             </span>
-            <small v-if="line.timingSource === 'interpolated'">Waktu diperkirakan dari baris sekitar</small>
+            <small v-if="line.timingSource === 'interpolated' && job.draftSource !== 'editor'">Waktu diperkirakan dari baris sekitar</small>
             <small v-else-if="line.needsReview">Perlu dicek</small>
           </span>
           <span v-else>{{ line.text }} <small v-if="line.needsReview">Perlu dicek</small></span>

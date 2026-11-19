@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { extractionActive, extractionLabels, lyricTimestamp } from '#shared/utils/lyrics'
+import { extractionActive, extractionLabels, lyricTimestamp, projectTitle, projectTitleMaxLength } from '#shared/utils/lyrics'
 import type { Extraction, LyricsSearchResult, SpeechTranscript } from '#shared/utils/lyrics'
 import { alignSyncedLyrics, estimateWordsFromLines } from '~/utils/align-lyrics'
 import BrowserSpeech from './BrowserSpeech.vue'
@@ -11,6 +11,10 @@ const router = useRouter()
 const job = shallowRef<Extraction>()
 const loading = ref(true)
 const error = ref('')
+const titleOpen = ref(false)
+const titleDraft = ref('')
+const titleError = ref('')
+const savingTitle = ref(false)
 const referenceError = ref('')
 const savingReference = ref(false)
 const referenceOpen = ref(false)
@@ -24,6 +28,7 @@ const tabs = [
   { id: 'audio', label: 'Audio', icon: 'i-lucide-audio-lines' },
   { id: 'lrclib', label: 'LRCLIB', icon: 'i-lucide-book-open' },
   { id: 'transkrip', label: 'Transkrip', icon: 'i-lucide-mic' },
+  { id: 'editor', label: 'Editor', icon: 'i-lucide-square-pen' },
   { id: 'draft', label: 'Draft', icon: 'i-lucide-file-text' },
   { id: 'progres', label: 'Progres', icon: 'i-lucide-list-checks' }
 ] as const
@@ -43,7 +48,8 @@ const synced = computed(() => selected.value && job.value?.durationMs
   ? alignSyncedLyrics(selected.value, job.value.durationMs) : undefined)
 const completeTranscript = computed(() => job.value?.transcript)
 const checkpoint = computed(() => job.value?.speechCheckpoint)
-const legacyTranscript = computed(() => job.value?.lyricReference ? undefined : job.value?.lines)
+const legacyTranscript = computed(() =>
+  job.value?.lyricReference || job.value?.draftSource === 'editor' ? undefined : job.value?.lines)
 const showingCheckpoint = ref(false)
 const inspectedTranscript = computed(() => showingCheckpoint.value || !completeTranscript.value ? checkpoint.value : completeTranscript.value)
 const transcriptJob = computed<Extraction | undefined>(() => {
@@ -56,7 +62,7 @@ const transcriptJob = computed<Extraction | undefined>(() => {
     lines, durationMs: project.durationMs, estimatedTiming: true }
 })
 const hasTranscriptForDraft = computed(() => Boolean(job.value?.transcript?.lines.length ||
-  (job.value?.lines?.length && !job.value.lyricReference)))
+  legacyTranscript.value?.length))
 const legacyWords = computed(() => job.value?.lyricReference && estimateWordsFromLines(job.value.lines || []))
 const canRefine = computed(() => job.value?.hasVocals && !job.value.vocalTiming && Boolean(job.value.lines?.length))
 let timer: ReturnType<typeof setTimeout> | undefined
@@ -84,12 +90,39 @@ function details(cause: unknown, fallback: string) {
   return response.data?.data?.message || fallback
 }
 
-function update(next: Extraction) {
+function update(next: Extraction, preserveTitle = false) {
   if (disposed) return
   clearTimeout(timer)
+  if (preserveTitle && job.value) next = { ...next, title: job.value.title }
   job.value = next
   emit('updated', next)
   if (extractionActive(next.phase)) timer = setTimeout(() => void load(), 1_200)
+}
+
+watch(titleOpen, open => {
+  if (!open || !job.value) return
+  titleDraft.value = projectTitle(job.value)
+  titleError.value = ''
+})
+
+async function renameProject() {
+  const title = titleDraft.value.trim()
+  if (!title || savingTitle.value || !job.value) return
+  savingTitle.value = true
+  titleError.value = ''
+  try {
+    const saved = await $fetch<{ title: string }>(`/api/extractions/${props.id}/title`, {
+      method: 'PUT', body: { title }
+    })
+    if (disposed || !job.value) return
+    ++request
+    update({ ...job.value, title: saved.title })
+    titleOpen.value = false
+  } catch (cause) {
+    titleError.value = details(cause, 'Judul gagal disimpan. Coba lagi.')
+  } finally {
+    savingTitle.value = false
+  }
 }
 
 async function load() {
@@ -115,7 +148,7 @@ onBeforeUnmount(() => {
 })
 
 watch([panel, () => job.value?.lyricReference?.id], async ([currentPanel, referenceId]) => {
-  if (currentPanel !== 'lrclib' || selected.value || !referenceId || attemptedReference === referenceId) return
+  if ((currentPanel !== 'lrclib' && currentPanel !== 'editor') || selected.value || !referenceId || attemptedReference === referenceId) return
   attemptedReference = referenceId
   restoringReference.value = true
   try {
@@ -162,7 +195,7 @@ function saveCheckpoint(transcript: SpeechTranscript, complete: boolean) {
 }
 
 function savedDraft(next: Extraction) {
-  update(next)
+  update(next, true)
 }
 
 async function buildDraft(mode: 'synced' | 'existing' | 'words' | 'vocal') {
@@ -196,7 +229,7 @@ async function action(value: 'cancel' | 'retry' | 'delete' | 'vocals', useOrigin
       const updated = await $fetch<Extraction>(`${path}/${value}`, {
         method: 'POST', body: value === 'retry' ? { useOriginal } : undefined
       })
-      update(updated)
+      update(updated, true)
       if (!disposed && value === 'vocals') openPanel('progres')
     }
   } catch (cause) {
@@ -220,7 +253,25 @@ async function action(value: 'cancel' | 'retry' | 'delete' | 'vocals', useOrigin
       <div class="studio-project-title">
         <span class="studio-hero-icon"><UIcon name="i-lucide-music-2" aria-hidden="true" /></span>
         <div>
-          <h1>{{ job.name.replace(/\.(mp3|wav|m4a)$/i, '') }}</h1>
+          <div class="studio-title-row">
+            <h1>{{ projectTitle(job) }}</h1>
+            <UModal v-model:open="titleOpen" title="Ubah judul proyek" :dismissible="!savingTitle" :close="!savingTitle">
+              <UButton type="button" variant="ghost" color="neutral" icon="i-lucide-pencil"
+                aria-label="Ubah judul proyek" title="Ubah judul proyek" />
+              <template #body>
+                <form class="grid gap-4" @submit.prevent="renameProject">
+                  <UFormField label="Judul proyek">
+                    <UInput v-model="titleDraft" class="w-full" :maxlength="projectTitleMaxLength" :disabled="savingTitle" required autofocus />
+                  </UFormField>
+                  <p v-if="titleError" class="form-error" role="alert">{{ titleError }}</p>
+                  <div class="flex flex-wrap justify-end gap-2">
+                    <UButton type="button" variant="outline" color="neutral" :disabled="savingTitle" @click="titleOpen = false">Batal</UButton>
+                    <UButton type="submit" :loading="savingTitle" :disabled="!titleDraft.trim()">Simpan</UButton>
+                  </div>
+                </form>
+              </template>
+            </UModal>
+          </div>
           <p>{{ job.durationMs ? lyricTimestamp(job.durationMs).split('.')[0] + ' · ' : '' }}{{ job.hasVocals ? 'Stem vokal tersedia' : 'Audio asli' }}</p>
         </div>
       </div>
@@ -320,8 +371,20 @@ async function action(value: 'cancel' | 'retry' | 'delete' | 'vocals', useOrigin
       </div>
     </section>
 
+    <section v-show="panel === 'editor'" id="studio-panel-editor" role="tabpanel" aria-labelledby="studio-tab-editor" class="studio-panel">
+      <h2>Editor lirik</h2>
+      <LyricsEditor v-if="canTranscribe && job.durationMs" :job="job" :active="panel === 'editor'"
+        :disabled="speechRunning || acting" @saved="savedDraft" @reference="openPanel('lrclib')" @reload="load" />
+      <p v-else class="studio-description">Editor bisa digunakan setelah audio siap.</p>
+    </section>
+
     <section v-show="panel === 'draft'" id="studio-panel-draft" role="tabpanel" aria-labelledby="studio-tab-draft" class="studio-panel">
-      <h2>Draft lirik</h2>
+      <div class="studio-artifact-heading">
+        <h2>Draft lirik</h2>
+        <UButton v-if="canTranscribe" color="neutral" variant="outline" icon="i-lucide-square-pen" @click="openPanel('editor')">
+          Buka Editor
+        </UButton>
+      </div>
       <template v-if="job.lines">
         <p class="studio-description">Ketuk baris atau kata untuk memutar audio dari waktunya.</p>
         <div v-if="canTranscribe && (canRefine || legacyWords)" class="studio-actions">

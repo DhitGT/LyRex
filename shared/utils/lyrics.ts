@@ -15,7 +15,7 @@ export interface LyricReference {
   trackName: string
   artistName: string
   matchedLines: number
-  timingSource?: 'lrclib'
+  timingSource?: 'lrclib' | 'lrclib-waveform' | 'waveform'
 }
 
 export interface LyricsSearchResult extends Omit<LyricReference, 'matchedLines' | 'timingSource'> {
@@ -49,6 +49,7 @@ export interface SpeechTranscript {
 export interface ProjectSummary {
   id: string
   name: string
+  title?: string
   phase: ExtractionPhase
   createdAt: number
   durationMs?: number
@@ -57,6 +58,7 @@ export interface ProjectSummary {
 export interface Extraction {
   id: string
   name: string
+  title?: string
   phase: ExtractionPhase
   durationMs?: number
   language?: string
@@ -72,12 +74,19 @@ export interface Extraction {
   queueAhead?: number
   requestedLanguage?: string
   speechRevision?: number
+  draftSource?: 'editor'
   estimatedTiming?: boolean
   vocalTiming?: boolean
   lyricReference?: LyricReference
   selectedReference?: LyricsSearchResult
   transcript?: SpeechTranscript
   speechCheckpoint?: SpeechTranscript
+}
+
+export const projectTitleMaxLength = 255
+
+export function projectTitle(project: Pick<ProjectSummary, 'name' | 'title'>) {
+  return project.title ?? (project.name.replace(/\.(mp3|wav|m4a)$/i, '').trim() || project.name)
 }
 
 export const extractionActive = (phase: ExtractionPhase) =>

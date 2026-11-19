@@ -82,8 +82,10 @@ export function estimateWordsFromLines(lines: LyricLine[]) {
   return added ? result : undefined
 }
 
-export function alignSyncedLyrics(reference: LyricsSearchResult, durationMs: number): LyricLine[] | undefined {
-  if (!reference.syncedLyrics || !(reference.duration > 0) || Math.abs(reference.duration * 1_000 - durationMs) > 2_000) {
+export function alignSyncedLyrics(reference: LyricsSearchResult, durationMs: number,
+  requireMatchingDuration = true): LyricLine[] | undefined {
+  if (!reference.syncedLyrics || (requireMatchingDuration &&
+    (!(reference.duration > 0) || Math.abs(reference.duration * 1_000 - durationMs) > 2_000))) {
     return undefined
   }
   const cues = new Map<number, string>()
