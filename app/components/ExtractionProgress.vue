@@ -7,6 +7,10 @@ const now = ref(0)
 const active = computed(() => extractionActive(props.job.phase))
 const logs = computed(() => [...(props.job.logs || [])].reverse())
 const latest = computed(() => logs.value[0])
+const progressPercent = computed(() => {
+  const percent = latest.value?.percent
+  return percent !== undefined && percent < 100 ? percent : undefined
+})
 const timeFormat = new Intl.DateTimeFormat('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
 let clock: ReturnType<typeof setInterval> | undefined
 
@@ -33,9 +37,9 @@ function elapsed(since: number) {
         </template>
         <template v-else>{{ latest?.message || 'Menunggu pembaruan server…' }}</template>
       </p>
-      <div v-if="latest?.percent !== undefined && latest.percent < 100" class="progress-meter">
-        <progress aria-label="Progres langkah aktif" :value="latest.percent" max="100" />
-        <span aria-hidden="true">{{ latest.percent }}%</span>
+      <div class="progress-meter">
+        <progress aria-label="Progres langkah aktif" :value="progressPercent" max="100" />
+        <span aria-hidden="true">{{ progressPercent === undefined ? 'Sedang diproses' : `${progressPercent}%` }}</span>
       </div>
       <p v-if="now && (job.startedAt || latest)" class="progress-time">
         Berjalan {{ elapsed(job.startedAt || latest!.at) }}
