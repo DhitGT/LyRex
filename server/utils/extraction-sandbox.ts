@@ -65,7 +65,7 @@ export async function launchCloudRun(project: VersionedProject) {
     await sandbox.writeFiles(files)
     stage = 'menginstal FFmpeg dan dependensi audio'
     const installed = await sandbox.runCommand('npm', [
-      'install', '--omit=dev', '--no-audit', '--no-fund', '--allow-scripts=ffmpeg-static,onnxruntime-node',
+      'install', '--omit=dev', '--no-audit', '--no-fund',
     ])
     if (installed.exitCode !== 0) {
       const [stdout, stderr] = await Promise.all([installed.stdout(), installed.stderr()])
