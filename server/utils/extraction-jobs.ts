@@ -12,7 +12,7 @@ import type { Extraction, LyricLine, LyricReference, LyricsSearchResult, Project
 import type { Stage, WorkerMessage, WorkerProgress, WorkerResult } from '../../engine/protocol'
 import { lrclibOptions, lrclibResult } from './lrclib'
 import type { LrclibRecord } from './lrclib'
-import { projectPath, readCloudProject, withLog, writeCloudProject } from '../../engine/cloud-project'
+import { projectPath, readCloudProject, updateCloudProject, withLog, writeCloudProject } from '../../engine/cloud-project'
 import type { VersionedProject as Job } from '../../engine/cloud-project'
 import { cloudUploads, launchCloudRun, refreshCloudRun, stopCloudRun } from './extraction-sandbox'
 
@@ -44,6 +44,18 @@ async function save(job: Job) {
   if (!cloudUploads) return saveLocal(job)
   try {
     return await writeCloudProject(job)
+  } catch (error) {
+    if (error instanceof BlobPreconditionFailedError) fail(409, 'Proyek berubah. Muat ulang dan coba lagi.')
+    throw error
+  }
+}
+
+async function saveUpdate(job: Job, update: (current: Job) => Job) {
+  if (!cloudUploads) return save(update(job))
+  try {
+    const updated = await updateCloudProject(job.owner, job.id, update)
+    if (!updated) fail(404, 'Proyek tidak ditemukan.')
+    return updated
   } catch (error) {
     if (error instanceof BlobPreconditionFailedError) fail(409, 'Proyek berubah. Muat ulang dan coba lagi.')
     throw error
@@ -309,7 +321,9 @@ function checkedLines(value: unknown, durationMs: number) {
 export async function saveSelectedReference(event: H3Event) {
   const { reference } = await readProjectBody<{ reference?: LyricsSearchResult | null }>(event, 384 * 1024)
   const job = await ownedJob(event)
-  if (reference === null) return publicJob(await save({ ...job, selectedReference: undefined }))
+  if (reference === null) {
+    return publicJob(await saveUpdate(job, current => ({ ...current, selectedReference: undefined })))
+  }
   if (!reference || !Number.isSafeInteger(reference.id) || reference.id <= 0 ||
     typeof reference.trackName !== 'string' || !reference.trackName.trim() || reference.trackName.length > 200 ||
     typeof reference.artistName !== 'string' || reference.artistName.length > 200 ||
@@ -320,7 +334,8 @@ export async function saveSelectedReference(event: H3Event) {
     fail(400, 'Acuan LRCLIB tidak valid.')
   }
   const { id, trackName, artistName, albumName, duration, text, syncedLyrics } = reference
-  return publicJob(await save({ ...job, selectedReference: { id, trackName, artistName, albumName, duration, text, syncedLyrics } }))
+  const selectedReference = { id, trackName, artistName, albumName, duration, text, syncedLyrics }
+  return publicJob(await saveUpdate(job, current => ({ ...current, selectedReference })))
 }
 
 export async function restoreSelectedReference(event: H3Event) {

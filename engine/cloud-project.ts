@@ -61,3 +61,19 @@ export async function updateCloudRun(
     }
   }
 }
+
+export async function updateCloudProject(
+  owner: string,
+  id: string,
+  update: (project: VersionedProject) => VersionedProject,
+) {
+  for (let attempt = 0; attempt < 4; attempt++) {
+    const current = await readCloudProject(owner, id)
+    if (!current) return
+    try {
+      return await writeCloudProject(update(current))
+    } catch (error) {
+      if (!(error instanceof BlobPreconditionFailedError) || attempt === 3) throw error
+    }
+  }
+}
