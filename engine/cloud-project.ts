@@ -45,35 +45,32 @@ export function withLog<T extends Project>(job: T, progress: WorkerProgress): T 
   return { ...job, logs: logs.slice(-32) }
 }
 
+export async function updateCloudProject(
+  owner: string,
+  id: string,
+  update: (project: VersionedProject) => VersionedProject | undefined,
+) {
+  for (let attempt = 0; attempt < 6; attempt++) {
+    const current = await readCloudProject(owner, id)
+    if (!current) return
+    const updated = update(current)
+    if (!updated) return
+    try {
+      return await writeCloudProject(updated)
+    } catch (error) {
+      if (!(error instanceof BlobPreconditionFailedError) || attempt === 5) throw error
+      const delay = Math.min(50 * 2 ** attempt, 800) + Math.floor(Math.random() * 50)
+      await new Promise(resolve => setTimeout(resolve, delay))
+    }
+  }
+}
+
 export async function updateCloudRun(
   owner: string,
   id: string,
   runId: string,
   update: (project: VersionedProject) => VersionedProject,
 ) {
-  for (let attempt = 0; attempt < 4; attempt++) {
-    const current = await readCloudProject(owner, id)
-    if (!current || current.run?.id !== runId) return
-    try {
-      return await writeCloudProject(update(current))
-    } catch (error) {
-      if (!(error instanceof BlobPreconditionFailedError) || attempt === 3) throw error
-    }
-  }
-}
-
-export async function updateCloudProject(
-  owner: string,
-  id: string,
-  update: (project: VersionedProject) => VersionedProject,
-) {
-  for (let attempt = 0; attempt < 4; attempt++) {
-    const current = await readCloudProject(owner, id)
-    if (!current) return
-    try {
-      return await writeCloudProject(update(current))
-    } catch (error) {
-      if (!(error instanceof BlobPreconditionFailedError) || attempt === 3) throw error
-    }
-  }
+  return updateCloudProject(owner, id, current =>
+    current.run?.id === runId ? update(current) : undefined)
 }
