@@ -68,7 +68,9 @@ export async function launchCloudRun(project: VersionedProject) {
       'install', '--omit=dev', '--no-audit', '--no-fund', '--allow-scripts=ffmpeg-static,onnxruntime-node',
     ])
     if (installed.exitCode !== 0) {
-      throw new Error(`npm install exited with code ${installed.exitCode}`)
+      const [stdout, stderr] = await Promise.all([installed.stdout(), installed.stderr()])
+      const output = [stdout, stderr].filter(Boolean).join('\n').trim().slice(-6_000)
+      throw new Error(`npm install exited with code ${installed.exitCode}${output ? `\n${output}` : ''}`)
     }
     stage = 'menjalankan worker audio'
     const command = await sandbox.runCommand({
