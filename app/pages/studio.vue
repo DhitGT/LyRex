@@ -2,12 +2,27 @@
 import { extractionLabels, lyricTimestamp, projectTitle } from '#shared/utils/lyrics'
 import type { Extraction, ProjectSummary } from '#shared/utils/lyrics'
 import EarphoneLatency from '~/components/EarphoneLatency.vue'
+import { listLocalProjects } from '~/utils/local-projects'
 
 useSeoMeta({ title: 'Studio LyRex', description: 'Kelola proyek audio, transkrip, dan draft lirik.' })
 
 const route = useRoute()
 const router = useRouter()
-const { data: projects, status, error, refresh } = await useFetch<ProjectSummary[]>('/api/extractions', { default: () => [] })
+const projects = shallowRef<ProjectSummary[]>([])
+const status = ref<'pending' | 'ready'>('pending')
+const error = ref(false)
+async function refresh() {
+  status.value = 'pending'
+  error.value = false
+  try {
+    projects.value = await listLocalProjects()
+  } catch {
+    error.value = true
+  } finally {
+    status.value = 'ready'
+  }
+}
+onMounted(() => void refresh())
 const projectsOpen = ref(false)
 const workspace = useTemplateRef<HTMLElement>('workspace')
 const explicitId = computed(() => typeof route.query.project === 'string' &&
@@ -98,7 +113,7 @@ async function removed(id: string) {
           <div class="studio-create-intro">
             <span class="studio-hero-icon"><UIcon name="i-lucide-audio-lines" aria-hidden="true" /></span>
             <h1>Proyek baru</h1>
-            <p>Mulai dengan satu lagu. Audio, transkrip, dan lirik tersimpan di proyek yang sama.</p>
+            <p>Mulai dengan satu lagu. Audio, transkrip, dan lirik tersimpan di browser ini.</p>
           </div>
           <AudioUpload @created="created" />
         </div>

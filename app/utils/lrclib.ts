@@ -1,4 +1,4 @@
-import type { LyricsSearchResult } from '../../shared/utils/lyrics'
+import type { LyricsSearchResult } from '#shared/utils/lyrics'
 
 export interface LrclibRecord {
   id: number
@@ -11,10 +11,28 @@ export interface LrclibRecord {
   syncedLyrics?: string | null
 }
 
-export const lrclibOptions = {
-  headers: { 'User-Agent': 'LyRex/0.1 (lyrics alignment)' },
-  timeout: 8_000,
-  retry: 0
+async function query<T>(path: string, signal?: AbortSignal): Promise<T> {
+  const timeout = AbortSignal.timeout(8_000)
+  const response = await fetch(`https://lrclib.net/api/${path}`, {
+    signal: signal ? AbortSignal.any([timeout, signal]) : timeout
+  }).catch(() => { throw new Error('LRCLIB belum bisa dihubungi. Coba lagi sebentar.') })
+  if (response.status === 429) throw new Error('LRCLIB membatasi pencarian. Tunggu sebentar sebelum mencoba lagi.')
+  if (!response.ok) throw new Error('LRCLIB belum bisa dihubungi. Coba lagi sebentar.')
+  return response.json()
+}
+
+export async function searchLyricsReferences(track: string, artist: string, signal: AbortSignal) {
+  const queryParams = new URLSearchParams({ track_name: track })
+  if (artist) queryParams.set('artist_name', artist)
+  const records = await query<LrclibRecord[]>(`search?${queryParams}`, signal)
+  return records.flatMap(record => {
+    const result = lrclibResult(record)
+    return result ? [result] : []
+  }).slice(0, 12)
+}
+
+export async function getLyricsReference(id: number) {
+  return lrclibResult(await query<LrclibRecord>(`get/${id}`))
 }
 
 export function lrclibResult(record: LrclibRecord): LyricsSearchResult | undefined {

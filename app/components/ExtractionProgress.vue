@@ -35,7 +35,7 @@ function elapsed(since: number) {
         <template v-if="job.phase === 'queued' && job.queueAhead">
           {{ job.queueAhead }} job di depan.
         </template>
-        <template v-else>{{ latest?.message || 'Menunggu pembaruan server…' }}</template>
+        <template v-else>{{ latest?.message || 'Menunggu pembaruan proses…' }}</template>
       </p>
       <div class="progress-meter">
         <progress aria-label="Progres langkah aktif" :value="progressPercent" max="100" />

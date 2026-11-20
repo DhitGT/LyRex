@@ -1,9 +1,9 @@
 <script setup lang="ts">
+import { createLocalProject } from '~/utils/local-projects'
 import { isYouTubeUrl } from '#shared/utils/lyrics'
 import type { Extraction } from '#shared/utils/lyrics'
 
 const emit = defineEmits<{ created: [job: Extraction] }>()
-const { vercelUploads } = useRuntimeConfig().public
 const fileInput = useTemplateRef<HTMLInputElement>('fileInput')
 const replaceButton = useTemplateRef<HTMLButtonElement>('replaceButton')
 const youtubeInput = useTemplateRef<HTMLInputElement>('youtubeInput')
@@ -13,7 +13,6 @@ const youtubeUrl = ref('')
 const settingsOpen = ref(false)
 const dragging = ref(false)
 const checking = ref(false)
-const uploadedBytes = ref(0)
 const fileError = ref('')
 const youtubeError = ref('')
 const busy = computed(() => checking.value)
@@ -74,56 +73,6 @@ function onDrop(event: DragEvent) {
   selectFile(files?.[0])
 }
 
-function uploadHeaders(file: File) {
-  return {
-    'X-LyRex-Filename': encodeURIComponent(file.name),
-    'X-LyRex-Source': source.value,
-    'X-LyRex-YouTube': encodeURIComponent(youtubeUrl.value.trim()),
-  }
-}
-
-async function uploadToBlob(file: File) {
-  const headers = uploadHeaders(file)
-  const { id, pathname, clientToken } = await $fetch('/api/extractions/upload', { method: 'POST', headers })
-  const { put } = await import('@vercel/blob/client')
-  await put(pathname, file, {
-    access: 'private',
-    token: clientToken,
-    contentType: 'application/octet-stream',
-    multipart: file.size > 5_000_000,
-    onUploadProgress: ({ loaded }) => { uploadedBytes.value = Math.min(file.size, loaded) },
-  })
-  uploadedBytes.value = file.size
-  return $fetch<Extraction>('/api/extractions', {
-    method: 'POST',
-    headers: { ...headers, 'X-LyRex-Upload-Id': id },
-  })
-}
-
-function upload(file: File) {
-  return new Promise<Extraction>((resolve, reject) => {
-    const request = new XMLHttpRequest()
-    request.open('POST', '/api/extractions')
-    request.responseType = 'json'
-    request.setRequestHeader('Content-Type', 'application/octet-stream')
-    for (const [name, value] of Object.entries(uploadHeaders(file))) request.setRequestHeader(name, value)
-    request.upload.onprogress = event => { uploadedBytes.value = Math.min(file.size, event.loaded) }
-    request.upload.onload = () => { uploadedBytes.value = file.size }
-    request.onload = () => {
-      if (request.status === 202 && request.response?.id) resolve(request.response)
-      else {
-        const sizeError = request.getResponseHeader('x-vercel-error')?.startsWith('FUNCTION_PAYLOAD_TOO_LARGE')
-          ? 'Batas unggahan Vercel adalah 4,5 MB. Pilih file yang lebih kecil.'
-          : 'File audio melebihi batas unggahan server. Pilih file yang lebih kecil.'
-        const fallback = request.status === 413 ? sizeError : 'Audio gagal diunggah. Coba lagi.'
-        reject(new Error(request.response?.data?.message || fallback))
-      }
-    }
-    request.onerror = () => reject(new Error('Koneksi unggahan terputus. Coba lagi.'))
-    request.send(file)
-  })
-}
-
 async function extractLyrics() {
   const file = selectedFile.value
   if (!file || busy.value) return
@@ -139,15 +88,12 @@ async function extractLyrics() {
     return
   }
 
-  uploadedBytes.value = 0
   checking.value = true
   try {
-    const extraction = await (vercelUploads ? uploadToBlob(file) : upload(file))
+    const extraction = await createLocalProject(file, source.value, youtubeUrl.value.trim())
     emit('created', extraction)
   } catch (error) {
-    const response = error as { data?: { data?: { message?: string } } }
-    fileError.value = response?.data?.data?.message ||
-      (error instanceof Error && !vercelUploads ? error.message : 'Audio gagal diunggah. Coba lagi.')
+    fileError.value = error instanceof Error ? error.message : 'Audio gagal disimpan di browser. Coba lagi.'
   } finally {
     checking.value = false
   }
@@ -162,7 +108,7 @@ async function extractLyrics() {
           <UIcon name="i-pixelarticons-audio-waveform" />
         </span>
         <div>
-          <h2 id="upload-title">Unggah lagumu</h2>
+          <h2 id="upload-title">Pilih file lagu</h2>
           <p>Satu lagu per proyek. Maks. 10 menit dan 100 MB.</p>
         </div>
       </div>
@@ -210,7 +156,7 @@ async function extractLyrics() {
           <legend>Mode ekstraksi</legend>
           <label>
             <input v-model="source" type="radio" value="vocals" name="extraction-source">
-            <span><strong>Vokal saja</strong><small>Pisahkan vokal sebelum Web Speech.</small></span>
+            <span><strong>Vokal saja</strong><small>Pisahkan vokal di browser. Unduhan model pertama sekitar 166 MB.</small></span>
           </label>
           <label>
             <input v-model="source" type="radio" value="original" name="extraction-source">
@@ -256,21 +202,13 @@ async function extractLyrics() {
         </UButton>
       </div>
 
-      <div v-if="checking && selectedFile" class="form-status upload-progress">
-        <label for="upload-progress">
-          {{ uploadedBytes < selectedFile.size ? 'Mengunggah audio' : 'Menunggu konfirmasi server' }}
-        </label>
-        <span>{{ formatBytes(uploadedBytes) }} / {{ fileSize }}</span>
-        <progress id="upload-progress" :value="uploadedBytes" :max="selectedFile.size" />
-      </div>
+      <p v-if="checking" class="form-status" role="status">Menyimpan audio di browser…</p>
     </form>
 
   </section>
 </template>
 
 <style scoped>
-.upload-progress { display: flex; flex-wrap: wrap; justify-content: space-between; gap: .25rem .75rem; }
-.upload-progress progress { width: 100%; accent-color: #587548; }
 .extraction-mode { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr)); gap: .45rem; min-width: 0; }
 .extraction-mode legend { margin-bottom: .35rem; font-weight: 700; }
 .extraction-mode label { display: flex; align-items: flex-start; gap: .5rem; min-height: 44px; padding: .5rem; border: 1px solid #dfd4b7; border-radius: .55rem; cursor: pointer; }

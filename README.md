@@ -1,13 +1,22 @@
 # LyRex
 
-## Deploying audio extraction
+## Deploy ke Vercel
 
-Run LyRex on a long-running Node.js 24+ server with one app instance and a persistent volume. LyRex stores projects and audio in `LYREX_DATA_DIR` (default `.data/extractions`) and runs an FFmpeg worker after each upload. Keep the `engine` directory and installed dependencies available at runtime, and run these commands from the project root.
+Impor repo sebagai proyek Nuxt. Konfigurasi di `vercel.json` menjalankan `npm run generate` dan menyajikan `.output/public` sebagai situs statis. Pemisahan vokal berjalan di Web Worker, dan IndexedDB menyimpan audio, progres transkripsi, serta draft. Deploy ini tidak memerlukan Vercel Blob, Vercel Sandbox, atau token penyimpanan.
+
+Mode **Vokal saja** mengunduh bobot Demucs sekitar 166 MB saat pertama kali dipakai dan menyimpannya di cache browser jika ruang tersedia. Biarkan tab tetap terbuka selama pemrosesan. Chrome atau Edge desktop disarankan untuk pemisahan vokal. Mode **Audio asli** bisa dipakai untuk membuka proyek dan menyunting draft tanpa unduhan Demucs.
+
+Proyek lokal tersedia pada origin dan profil browser yang menyimpannya. Proyek dari versi server sebelumnya tidak muncul otomatis. Ekspor lirik dan audio dari versi lama untuk menyimpan salinannya sebelum beralih.
+
+Pencarian acuan menghubungi LRCLIB secara langsung. Jika dipilih, transkripsi Web Speech dapat menggunakan layanan pengenalan suara browser.
+
+## Jalankan lokal
+
+Gunakan Node.js 24 atau lebih baru.
 
 ```sh
 npm ci
-npm run build -- --preset node-server
-npm start
+npm run dev
 ```
 
-Route HTTPS traffic to the Node server. If you use a reverse proxy, configure it to accept request bodies of at least 100,000,000 bytes to support LyRex's 100 MB upload limit. Vercel deployments instead upload directly to private Blob storage and run FFmpeg and Demucs in a Vercel Sandbox; configure `BLOB_READ_WRITE_TOKEN` in the project environment. Vercel Functions reject proxied request bodies over 4.5 MB before the extraction endpoint runs. [Vercel Functions limits](https://vercel.com/docs/functions/limitations#request-body-size)
+Untuk menguji build produksi, jalankan `npm run generate` dan sajikan direktori `.output/public` melalui server HTTP lokal.

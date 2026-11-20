@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { LyricsSearchResult } from '#shared/utils/lyrics'
+import { searchLyricsReferences } from '~/utils/lrclib'
 
 const props = defineProps<{ durationMs?: number, selected?: LyricsSearchResult, disabled?: boolean }>()
 const emit = defineEmits<{ select: [result: LyricsSearchResult] }>()
@@ -29,14 +30,11 @@ async function search() {
   error.value = ''
   results.value = []
   try {
-    results.value = await $fetch<LyricsSearchResult[]>('/api/lyrics/search', {
-      query: { title: track, artist: artist.value.trim() }, signal: request.signal, retry: 0
-    })
+    results.value = await searchLyricsReferences(track, artist.value.trim(), request.signal)
     searched.value = true
   } catch (cause) {
     if (!request.signal.aborted) {
-      const response = cause as { data?: { message?: string } }
-      error.value = response.data?.message || 'Pencarian LRCLIB gagal. Coba lagi.'
+      error.value = cause instanceof Error ? cause.message : 'Pencarian LRCLIB gagal. Coba lagi.'
     }
   } finally {
     if (pending === request) {

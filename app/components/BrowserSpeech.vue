@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { saveLocalDraft, saveLocalTranscript } from '~/utils/local-projects'
 import type { Extraction, LyricLine, LyricReference, SpeechTranscript } from '#shared/utils/lyrics'
 import type { Waveform } from '#shared/utils/waveform'
 import { browserSpeech, loadSpeechAudio, previewSpeechAudio, speechSampleRate, transcribeWithBrowser } from '~/utils/web-speech'
@@ -47,7 +48,9 @@ const confirmedText = ref('')
 const interimText = ref('')
 const followTranscript = ref(true)
 const audioSource = computed(() => props.job.hasVocals && !props.job.useOriginal ? 'vocals' : 'original')
-const audioUrl = computed(() => `/api/extractions/${props.job.id}/audio/${audioSource.value}`)
+const audioAsset = useLocalAudio(audioSource)
+const audioUrl = computed(() => audioAsset.value.url)
+const vocalAsset = useLocalAudio(computed(() => 'vocals'))
 const canResume = computed(() => props.job.speechCheckpoint?.source === audioSource.value)
 const savedLines = computed(() => props.job.transcript?.lines ??
   (!props.job.lyricReference && props.job.draftSource !== 'editor' ? props.job.lines : undefined))
@@ -175,20 +178,17 @@ async function start(mode: 'speech' | 'resume' | 'save' | 'existing' | 'words' |
         update(`Menyiapkan audio · ${channelNames[selectedChannel]} · ${eqNames[selectedEq]}…`)
         audio = new AudioContext({ sampleRate: speechSampleRate })
         await audio.resume()
-        const path = `/api/extractions/${job.id}/transcript`
         const runId = crypto.randomUUID()
-        const checkpoint = await $fetch<SpeechTranscript>(path, {
-          method: 'PUT', signal, body: { runId, previousRunId: job.speechCheckpoint?.runId ?? null,
-            resume: mode === 'resume', language: selectedLanguage, channel: selectedChannel, eq: selectedEq }
+        const checkpoint = await saveLocalTranscript(job.id, signal, {
+          runId, previousRunId: job.speechCheckpoint?.runId ?? null,
+          resume: mode === 'resume', language: selectedLanguage, channel: selectedChannel, eq: selectedEq
         })
         emit('checkpoint', checkpoint, false)
         selectedLanguage = checkpoint.language
         selectedEq = checkpoint.eq
         selectedChannel = checkpoint.channel
         async function saveCheckpoint(lines: LyricLine[], processedMs: number, complete = false) {
-          const saved = await $fetch<SpeechTranscript>(path, {
-            method: 'PUT', signal, body: { runId, lines, processedMs, complete }
-          })
+          const saved = await saveLocalTranscript(job.id, signal, { runId, lines, processedMs, complete })
           emit('checkpoint', saved, complete)
         }
         const transcript = await transcribeWithBrowser(audio, audioUrl.value, selectedLanguage,
@@ -233,8 +233,7 @@ async function start(mode: 'speech' | 'resume' | 'save' | 'existing' | 'words' |
         lines = estimates ?? lines
         update('Menganalisis transisi bunyi pada stem vokal…')
         try {
-          vocalAudio ??= await loadSpeechAudio(new OfflineAudioContext(1, 1, speechSampleRate),
-            `/api/extractions/${job.id}/audio/vocals`, signal)
+          vocalAudio ??= await loadSpeechAudio(new OfflineAudioContext(1, 1, speechSampleRate), vocalAsset.value.url, signal)
           const refined = await refineVocalTiming(lines, vocalAudio, selectedChannel, signal)
           lines = refined.lines
           vocalTiming = refined.changed
@@ -253,15 +252,12 @@ async function start(mode: 'speech' | 'resume' | 'save' | 'existing' | 'words' |
       draft.value = { language: draftLanguage, revision: job.speechRevision ?? 0, lines, lyricReference, vocalTiming }
     }
     update('Menyimpan draft lirik…')
-    const result = await $fetch<Extraction>(`/api/extractions/${job.id}/speech`, {
-      method: 'POST', body: draft.value, signal
-    })
+    const result = await saveLocalDraft(job.id, draft.value!, false, signal)
     draft.value = undefined
     emit('complete', result)
   } catch (cause) {
     if (!signal.aborted) {
-      const response = cause as { data?: { data?: { message?: string } } }
-      error.value = response.data?.data?.message || (cause instanceof Error ? cause.message : 'Web Speech gagal.')
+      error.value = cause instanceof Error ? cause.message : 'Web Speech gagal.'
     }
   } finally {
     await audio?.close().catch(() => {})
@@ -337,7 +333,7 @@ defineExpose({ start })
       <p v-if="job.speechCheckpoint && !canResume" class="speech-note">Sumber audio berubah. Kamu masih bisa melihat transkrip parsial sebelumnya.</p>
     </template>
     <p v-else-if="mounted" class="speech-note">
-      Jalankan Web Speech dari file di Chrome desktop. Transkrip tersimpan tetap bisa dibuka di Studio.
+      Web Speech dari file tersedia di Chrome desktop dan dapat memakai layanan pengenalan suara browser.
     </p>
     <template v-if="mounted && !running">
       <UButton v-if="savedLines?.length && !job.lines" class="apply-reference" variant="outline" color="neutral" @click="start('existing')">

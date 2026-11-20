@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { DraftConflict, saveLocalDraft } from '~/utils/local-projects'
 import { lyricTimestamp } from '#shared/utils/lyrics'
 import type { Extraction, LyricLine, LyricReference, LyricWord } from '#shared/utils/lyrics'
 import { alignLyrics, alignSyncedLyrics, estimateWordsFromLines } from '~/utils/align-lyrics'
@@ -10,7 +11,8 @@ const emit = defineEmits<{ saved: [job: Extraction], reference: [], reload: [] }
 const player = useTemplateRef<InstanceType<typeof AudioWaveform>>('player')
 const duration = computed(() => props.job.durationMs ?? 0)
 const source = computed(() => props.job.hasVocals ? 'vocals' : 'original')
-const audioUrl = computed(() => `/api/extractions/${props.job.id}/audio/${source.value}`)
+const audioAsset = useLocalAudio(source)
+const audioUrl = computed(() => audioAsset.value.url)
 const reference = computed(() => props.job.selectedReference)
 const synced = computed(() => reference.value && alignSyncedLyrics(reference.value, duration.value, false))
 const version = computed(() => props.job.speechRevision ?? 0)
@@ -225,17 +227,16 @@ async function save() {
   notice.value = ''
   try {
     const normalized = lines.value.map(line => ({ ...line, text: line.text.replace(/\s+/g, ' ').trim() }))
-    const next = await $fetch<Extraction>(`/api/extractions/${props.job.id}/draft`, {
-      method: 'PUT', retry: 0, body: { revision: revision.value, lines: estimateWordsFromLines(normalized) ?? normalized,
-        lyricReference: lyricReference.value }
-    })
+    const next = await saveLocalDraft(props.job.id, {
+      revision: revision.value, lines: estimateWordsFromLines(normalized) ?? normalized,
+      lyricReference: lyricReference.value
+    }, true)
     reset(next)
     emit('saved', next)
     notice.value = 'Perubahan tersimpan di Draft.'
   } catch (cause) {
-    const response = cause as { status?: number, data?: { message?: string, data?: { message?: string } } }
-    error.value = response.data?.data?.message || response.data?.message || 'Draft gagal disimpan. Coba lagi.'
-    if (response.status === 409) emit('reload')
+    error.value = cause instanceof Error ? cause.message : 'Draft gagal disimpan. Coba lagi.'
+    if (cause instanceof DraftConflict) emit('reload')
   } finally {
     mode.value = undefined
   }
@@ -243,7 +244,7 @@ async function save() {
 </script>
 
 <template>
-  <AudioWaveform ref="player" :src="audioUrl" :label="source === 'vocals' ? 'Stem vokal' : 'Audio asli'"
+  <AudioWaveform ref="player" :src="audioUrl" :pcm="audioAsset.blob" :label="source === 'vocals' ? 'Stem vokal' : 'Audio asli'"
     :duration-ms="duration" :active="active" :show-pitch="source === 'vocals'"
     :markers="markers" @position="position = $event" />
 

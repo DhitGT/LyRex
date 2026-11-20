@@ -3,7 +3,8 @@ import type { Extraction } from '#shared/utils/lyrics'
 
 const props = defineProps<{ job: Extraction, active: boolean }>()
 const source = ref<'original' | 'vocals'>(props.job.hasVocals ? 'vocals' : 'original')
-const audioUrl = computed(() => `/api/extractions/${props.job.id}/audio/${source.value}`)
+const audioAsset = useLocalAudio(source)
+const audioUrl = computed(() => audioAsset.value.url)
 </script>
 
 <template>
@@ -17,7 +18,7 @@ const audioUrl = computed(() => `/api/extractions/${props.job.id}/audio/${source
     <p class="studio-description">{{ job.hasVocals
       ? 'Ganti sumber untuk membandingkan audio di posisi putar yang sama.'
       : 'Dengarkan rekaman asli yang tersimpan di proyek.' }}</p>
-    <AudioWaveform :src="audioUrl" :label="source === 'vocals' ? 'Stem vokal' : 'Audio asli'"
+    <AudioWaveform :src="audioUrl" :pcm="audioAsset.blob" :label="source === 'vocals' ? 'Stem vokal' : 'Audio asli'"
       :duration-ms="job.durationMs" :active="active" :show-pitch="source === 'vocals'" />
     <div class="studio-actions">
       <UButton :href="audioUrl" :download="`${job.name.replace(/\.[^.]+$/, '')}-${source}.wav`"

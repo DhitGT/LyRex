@@ -7,7 +7,6 @@
   },
   "scripts": {
     "build": "nuxt build",
-    "start": "node .output/server/index.mjs",
     "dev": "nuxt dev",
     "generate": "nuxt generate",
     "preview": "nuxt preview",
@@ -19,21 +18,13 @@
     "@iconify-json/lucide": "^1.2.135",
     "@iconify-json/pixelarticons": "^1.2.10",
     "@nuxt/ui": "4.13.0",
-    "@vercel/blob": "^2.9.0",
-    "@vercel/sandbox": "^4.0.0",
-    "ffmpeg-static": "5.3.0",
     "nuxt": "4.6.4",
-    "onnxruntime-node": "1.24.3",
+    "onnxruntime-web": "1.24.3",
     "tailwindcss": "4.3.5",
     "vue": "^3.5.44",
     "vue-router": "^5.4.0"
   },
   "devDependencies": {
     "@types/node": "^24.19.2"
-  },
-  "overrides": {
-    "onnxruntime-node": {
-      "adm-zip": "0.6.1"
-    }
   }
 }

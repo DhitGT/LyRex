@@ -14,7 +14,8 @@ const activeLine = computed(() => lines.value.findIndex(line => line.startMs <= 
 const hasWordTimes = computed(() => lines.value.some(line => line.words?.length))
 const activeWord = computed(() => lines.value[activeLine.value]?.words?.find(word =>
   word.startMs <= position.value && position.value < word.endMs))
-const audioUrl = computed(() => `/api/extractions/${props.job.id}/audio/${source.value}`)
+const audioAsset = useLocalAudio(source)
+const audioUrl = computed(() => audioAsset.value.url)
 
 function wordTimestamp(ms: number) {
   return lyricTimestamp(ms, 'SRT').replace(/^00:/, '').replace(',', '.')
@@ -61,7 +62,7 @@ function download(format: LyricFormat) {
     </p>
     <AudioWaveform
       ref="player"
-      :src="audioUrl"
+      :src="audioUrl" :pcm="audioAsset.blob"
       :label="source === 'vocals' ? 'Stem vokal' : 'Audio asli'"
       :duration-ms="job.durationMs"
       :active="active"

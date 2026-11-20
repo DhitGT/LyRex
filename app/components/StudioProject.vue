@@ -2,6 +2,9 @@
 import { extractionActive, extractionLabels, lyricTimestamp, projectTitle, projectTitleMaxLength } from '#shared/utils/lyrics'
 import type { Extraction, LyricsSearchResult, SpeechTranscript } from '#shared/utils/lyrics'
 import { alignSyncedLyrics, estimateWordsFromLines } from '~/utils/align-lyrics'
+import { provideLocalAudio } from '~/composables/useLocalAudio'
+import { cancelLocalProject, deleteLocalProject, getLocalProject, renameLocalProject, restartLocalProject, saveLocalReference } from '~/utils/local-projects'
+import { getLyricsReference } from '~/utils/lrclib'
 import BrowserSpeech from './BrowserSpeech.vue'
 
 const props = defineProps<{ id: string }>()
@@ -9,6 +12,7 @@ const emit = defineEmits<{ updated: [job: Extraction], removed: [id: string] }>(
 const route = useRoute()
 const router = useRouter()
 const job = shallowRef<Extraction>()
+provideLocalAudio(job)
 const loading = ref(true)
 const error = ref('')
 const titleOpen = ref(false)
@@ -86,14 +90,12 @@ function moveTab(event: KeyboardEvent, index: number) {
 }
 
 function details(cause: unknown, fallback: string) {
-  const response = cause as { data?: { data?: { message?: string } } }
-  return response.data?.data?.message || fallback
+  return cause instanceof Error ? cause.message : fallback
 }
 
-function update(next: Extraction, preserveTitle = false) {
+function update(next: Extraction) {
   if (disposed) return
   clearTimeout(timer)
-  if (preserveTitle && job.value) next = { ...next, title: job.value.title }
   job.value = next
   emit('updated', next)
   if (extractionActive(next.phase)) timer = setTimeout(() => void load(), 1_200)
@@ -111,12 +113,10 @@ async function renameProject() {
   savingTitle.value = true
   titleError.value = ''
   try {
-    const saved = await $fetch<{ title: string }>(`/api/extractions/${props.id}/title`, {
-      method: 'PUT', body: { title }
-    })
+    const saved = await renameLocalProject(props.id, title)
     if (disposed || !job.value) return
     ++request
-    update({ ...job.value, title: saved.title })
+    update(saved)
     titleOpen.value = false
   } catch (cause) {
     titleError.value = details(cause, 'Judul gagal disimpan. Coba lagi.')
@@ -128,7 +128,7 @@ async function renameProject() {
 async function load() {
   const version = ++request
   try {
-    const next = await $fetch<Extraction>(`/api/extractions/${props.id}`)
+    const next = await getLocalProject(props.id)
     if (disposed || version !== request) return
     error.value = ''
     update(next)
@@ -152,9 +152,7 @@ watch([panel, () => job.value?.lyricReference?.id], async ([currentPanel, refere
   attemptedReference = referenceId
   restoringReference.value = true
   try {
-    const restored = await $fetch<LyricsSearchResult | null>(`/api/extractions/${props.id}/reference`, {
-      method: 'POST', retry: 0
-    })
+    const restored = await getLyricsReference(referenceId)
     if (restored && !disposed && job.value && !job.value.selectedReference && job.value.lyricReference?.id === referenceId) {
       job.value = { ...job.value, selectedReference: restored }
     }
@@ -173,9 +171,7 @@ async function selectReference(reference: LyricsSearchResult) {
   referenceError.value = ''
   try {
     // Merge just the changed field so a worker update cannot be replaced by a late response.
-    const saved = await $fetch<Extraction>(`/api/extractions/${props.id}/reference`, {
-      method: 'PUT', body: { reference }
-    })
+    const saved = await saveLocalReference(props.id, reference)
     if (!disposed && job.value) {
       job.value = { ...job.value, selectedReference: saved.selectedReference }
       referenceOpen.value = false
@@ -195,7 +191,7 @@ function saveCheckpoint(transcript: SpeechTranscript, complete: boolean) {
 }
 
 function savedDraft(next: Extraction) {
-  update(next, true)
+  update(next)
 }
 
 async function buildDraft(mode: 'synced' | 'existing' | 'words' | 'vocal') {
@@ -220,16 +216,14 @@ async function action(value: 'cancel' | 'retry' | 'delete' | 'vocals', useOrigin
   error.value = ''
   ++request
   clearTimeout(timer)
-  const path = `/api/extractions/${props.id}`
   try {
     if (value === 'delete') {
-      await $fetch(path, { method: 'DELETE' })
+      await deleteLocalProject(props.id)
       if (!disposed) emit('removed', props.id)
     } else {
-      const updated = await $fetch<Extraction>(`${path}/${value}`, {
-        method: 'POST', body: value === 'retry' ? { useOriginal } : undefined
-      })
-      update(updated, true)
+      const updated = value === 'cancel' ? await cancelLocalProject(props.id)
+        : await restartLocalProject(props.id, value, useOriginal)
+      update(updated)
       if (!disposed && value === 'vocals') openPanel('progres')
     }
   } catch (cause) {

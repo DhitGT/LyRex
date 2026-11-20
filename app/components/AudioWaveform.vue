@@ -1,20 +1,18 @@
 <script lang="ts">
 import type { Waveform } from '#shared/utils/waveform'
 
-const waveformCache = new Map<string, Promise<Waveform>>()
+import { localWaveform, localWaveformDetail } from '~/utils/local-wav'
 
-function fetchWaveform(src: string) {
+const waveformCache = new WeakMap<Blob, Promise<Waveform>>()
+
+function fetchWaveform(src: Blob) {
   const cached = waveformCache.get(src)
   if (cached) return cached
-  const request = $fetch<Waveform>(src, { query: { waveform: '1' }, retry: 0 }).catch(error => {
+  const request = localWaveform(src).catch(error => {
     waveformCache.delete(src)
     throw error
   })
   waveformCache.set(src, request)
-  if (waveformCache.size > 12) {
-    const oldest = waveformCache.keys().next().value
-    if (oldest) waveformCache.delete(oldest)
-  }
   return request
 }
 </script>
@@ -22,7 +20,6 @@ function fetchWaveform(src: string) {
 <script setup lang="ts">
 import { lyricTimestamp } from '#shared/utils/lyrics'
 import type { LyricWord } from '#shared/utils/lyrics'
-import { waveformDetail } from '#shared/utils/waveform'
 import type { WaveformDetail } from '#shared/utils/waveform'
 import { visualPlaybackMs } from '~/utils/playback-latency'
 import { useLatencyTestRunning, usePlaybackLatency } from '~/composables/usePlaybackLatency'
@@ -104,11 +101,11 @@ async function loadPeaks() {
     return
   }
   if (loadedSource !== props.src) waveform.value = undefined
-  if (!mounted.value || !props.active || !props.src || waveform.value) return
+  if (!mounted.value || !props.active || !props.src || !props.pcm || waveform.value) return
   const src = props.src
   loadingPeaks.value = true
   try {
-    const result = await fetchWaveform(src)
+    const result = await fetchWaveform(props.pcm)
     if (version !== loadVersion) return
     waveform.value = result
     loadedSource = src
@@ -119,28 +116,18 @@ async function loadPeaks() {
   }
 }
 
-async function readLocalDetail(pcm: Blob, fromMs: number, toMs: number) {
-  const header = new DataView(await pcm.slice(0, 44).arrayBuffer())
-  const rate = header.getUint32(24, true)
-  const first = Math.round(fromMs * rate / 1_000)
-  const end = Math.round(toMs * rate / 1_000)
-  const data = new DataView(await pcm.slice(44 + first * 2, 44 + end * 2).arrayBuffer())
-  const samples = Float32Array.from({ length: data.byteLength / 2 }, (_, index) => data.getInt16(index * 2, true) / 32_768)
-  return waveformDetail(samples, rate, fromMs, Boolean(props.showPitch))
-}
-
 watch([mounted, () => props.active, () => props.src, () => props.pcm, viewStart, viewLength, zoom], (_, __, cleanup) => {
   detail.value = undefined
   detailError.value = false
-  if (!mounted.value || !props.active || !zoom.value || viewLength.value <= 0 || viewLength.value > 3_000) return
+  if (!mounted.value || !props.active || !props.pcm || !zoom.value || viewLength.value <= 0 || viewLength.value > 3_000) return
   const task = new AbortController()
   const { signal } = task
+  const pcm = props.pcm
   const from = viewStart.value
   const to = viewEnd.value
   const timer = setTimeout(async () => {
     try {
-      const result = props.pcm ? await readLocalDetail(props.pcm, from, to) :
-        await $fetch<WaveformDetail>(props.src, { query: { waveform: 'detail', from, to }, signal, retry: 0 })
+      const result = await localWaveformDetail(pcm, from, to, Boolean(props.showPitch))
       if (!signal.aborted) detail.value = result
     } catch {
       if (!signal.aborted) detailError.value = true
@@ -402,7 +389,7 @@ watch(() => props.src, () => {
   previewEndMs = undefined
   stopFrame()
 }, { flush: 'sync' })
-watch([mounted, () => props.src, () => props.active, () => props.waveform], () => void loadPeaks())
+watch([mounted, () => props.src, () => props.active, () => props.waveform, () => props.pcm], () => void loadPeaks())
 watch(() => props.active, active => { if (!active) pause() })
 watch(testingLatency, testing => { if (testing) pause() })
 watch(playbackOffset, syncPosition)
@@ -431,14 +418,14 @@ defineExpose({
     seek(ms)
     setZoom(zoomSteps.value.find(step => step > 0 && step <= 3_000) ?? 0)
   },
-  readWaveform: () => props.waveform ? Promise.resolve(props.waveform) : fetchWaveform(props.src)
+  readWaveform: () => props.pcm && !props.waveform ? fetchWaveform(props.pcm) : Promise.resolve(props.waveform)
 })
 </script>
 
 <template>
   <div class="waveform-player" :aria-label="label" role="group">
     <audio
-      ref="audio" :src="src" :preload="active ? 'metadata' : 'none'" hidden
+      ref="audio" :src="src || undefined" :preload="active ? 'metadata' : 'none'" hidden
       @loadedmetadata="metadata" @timeupdate="syncPosition" @seeked="syncPosition"
       @play="onPlay" @pause="onPause" @ended="onPause"
       @error="pending = undefined; mediaError = 'Audio tidak dapat dimuat.'"
